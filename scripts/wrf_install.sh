@@ -1,7 +1,7 @@
 #!/bin/sh
 #WRF
 source ~/.bashrc
-cd /shared
+cd /fsx
 mkdir WRF
 cd WRF
 wget https://wrf-softwares.s3.cn-northwest-1.amazonaws.com.cn/WRFV4.0.TAR.gz
