@@ -38,14 +38,15 @@ Configure 向导将带领你一步一步创建你的集群
 ```
 Cluster Template [default]: WRFcluster //集群名
 Acceptable Values for AWS Region ID:
-    cn-north-1
-    cn-northwest-1
-AWS Region ID []: cn-northwest-1 //选择部署区域，示例选择的是宁夏区域
+    us-east-1
+    us-west-2
+    ......
+AWS Region ID []: us-west-2 //选择部署区域，示例选择的是Oregon
 VPC Name [public]: prod //命名VPC
 Acceptable Values for Key Name:
-    handson
-    key-cn-northwest-1
-Key Name []: key-cn-northwest-1 //选择一个密钥
+    Oregon
+    ......
+Key Name []: Oregon //选择一个密钥
 Acceptable Values for VPC ID:
     vpc-0f1ddb64137540bed
     vpc-503dce39
@@ -69,20 +70,20 @@ pcluster configure时已经设置了VPC、subnet等信息，依然沿用之前�
 修改post_install为上一步文件上传的s3位置。
 ```
 [aws]
-aws_region_name = cn-northwest-1
+aws_region_name = us-west-2
 
 [cluster WRFcluster]
 vpc_settings = prod
-key_name = key-cn-northwest-1
+key_name = Oregon
 extra_json = { "cluster" : { "cfn_scheduler_slots" : "cores", "ganglia_enabled" : "yes" } }
 ## 自己的脚本地址
-post_install = s3://wrfcluster-demo/pcluster_postinstall.sh
+post_install = s3://paul-parallelcluster/pcluster_postinstall.sh
 ## 自己的S3桶ARN
-s3_read_write_resource = arn:aws-cn:s3:::wrfcluster-demo/*
+s3_read_write_resource = arn:aws:s3:::paul-parallelcluster/*
 ## 计算节点类型
-compute_instance_type = c5.9xlarge
+compute_instance_type = c5.18xlarge
 ## 主节点类型
-master_instance_type = m5.xlarge
+master_instance_type = c5.xlarge
 ## 根卷大小
 master_root_volume_size = 100
 ## 计算节点根卷大小，需大于ami需要，选填
@@ -90,32 +91,31 @@ compute_root_volume_size = 100
 ## AutoScailing设置，选填
 scaling_settings = WRF-ASG
 ## 初始队列大小，默认为2，选填
-initial_queue_size = 1
+initial_queue_size = 0
 ## 最大队列容量，默认10，选填
-max_queue_size = 2
+max_queue_size = 5
 placement = cluster
 placement_group = DYNAMIC
 cluster_type = ondemand
 base_os = alinux
-## 调度工具配置
-scheduler = torque
-## 数据卷配置
-ebs_settings = wrf-ebs
+scheduler = slurm
+## FSx共享卷配置
+fsx_settings = fs
 
 #auto scaling设置
 [scaling WRF-ASG]
 #节点检测间隔，5分钟无负载则缩减，默认15分钟，选填
 scaledown_idletime = 5
 
-[ebs wrf-ebs]  ## Used for the NFS mounted file system
-## 数据卷类型
-volume_type = gp2
-## 数据卷大小(GB)
-volume_size = 2000
+[fsx fs]
+fsx_dir = /fsx
+## FSx共享卷id
+fsx_fs_id = fs-xxxxxxxx
+
 
 [vpc prod]
-master_subnet_id = subnet-41001e39
-vpc_id = vpc-503dce39
+master_subnet_id = subnet-xxxxxxxx
+vpc_id = vpc-xxxxxxxx
 
 [global]
 update_check = true
@@ -135,7 +135,7 @@ $ pcluster create WRFcluster
 * * *
 通过ssh登陆到Master节点
 ```
-$ ssh -i "key-cn-northwest-1.pem" ec2-user@ec2-x-x-x-x.cn-northwest-1.compute.amazonaws.com.cn -o tcpkeepalive=yes -o serveraliveinterval=50
+$ ssh -i "Oregon.pem" ec2-user@MASTER_IP
 ```
 更新并安装jasper
 ```
@@ -143,11 +143,11 @@ $ sudo yum upgrade -y \
 && sudo yum install gcc64-gfortran.x86_64 libgfortran.x86_64 jasper jasper-libs.x86_64 jasper-devel.x86_64 libpng-devel.x86_64 -y
 ```
 
-将这个仓库下载到本地，例如共享卷/shared目录下，然后进入相应目录
+将这个仓库下载到本地，例如共享卷/fsx目录下，然后进入相应目录
 ```
-$ cd /shared
-$ git clone https://github.com/BlastShadowsong/wrf-cluster-on-aws-pcluster.git
-$ cd wrf-cluster-on-aws-pcluster/
+$ cd /fsx
+$ git clone https://github.com/BlastShadowsong/wrf-on-parallelcluster-global.git
+$ cd wrf-on-parallelcluster-global/
 ```
 
 依次安装NetCDF 4.1.3, MPICH 3.0.4
@@ -211,7 +211,7 @@ em_scm_xy (1d ideal case)
 ```
 在本次实验中选择em_real模式
 ```
-$ cd /shared/WRF/WRF
+$ cd /fsx/WRF/WRF
 $ source ~/.bashrc
 $ ./compile em_real 2>&1 | tee compile.log
 ```
@@ -232,6 +232,7 @@ build completed: Fri Jul 19 12:21:41 UTC 2019
 ```
 安装WPS 4.0
 ```
+$ cd wrf-on-parallelcluster-global/
 $ sh scripts/wps_install.sh
 ```
 选项列表
@@ -308,9 +309,9 @@ $ ./compile 2>&1 | tee compile.log
 #### WRF的运行与并行计算
 * * *
 ##### 下载实验数据
-1. 下载静态地理数据，在/shared 目录下新建文件夹Build_WRF，下载到其中，可从官方网站获取：http://www2.mmm.ucar.edu/wrf/users/download/get_sources_wps_geog.html
+1. 下载静态地理数据，在/fsx 目录下新建文件夹Build_WRF，下载到其中，可从官方网站获取：http://www2.mmm.ucar.edu/wrf/users/download/get_sources_wps_geog.html
 ```
-$ cd /shared
+$ cd /fsx
 $ mkdir Build_WRF
 $ cd Build_WRF
 $ wget http://www2.mmm.ucar.edu/wrf/users/download/get_sources_wps_geog.html
@@ -324,16 +325,16 @@ $ tar -xf geog_high_res_mandatory.tar
 
 然后修改 namelist.wps 文件中的 &geogrid 部分，将静态文件目录提供给geogrid程序。
 ```
-$ cd /shared/WPS/WPS
+$ cd /fsx/WPS/WPS
 $ vim namelist.wps
-$ geog_data_path =' shared/Build_WRF/WPS_GEOG/'
+$ geog_data_path =' fsx/Build_WRF/WPS_GEOG/'
 ```
 
 2. 下载实时数据，可从官方网站获取：ftp://ftpprd.ncep.noaa.gov/pub/data/nccf/com/gfs/prod
-在 /shared/Build_WRF 目录下创建一个目录 DATA，将实时数据下载到 DATA 中。
+在 /fsx/Build_WRF 目录下创建一个目录 DATA，将实时数据下载到 DATA 中。
 本例中下载2019年8月1日的f000、f006、f012三个数据作为测试数据，您可以根据自己的需求选择其他实时数据用于测试。
 ```
-$ cd /shared/Build_WRF
+$ cd /fsx/Build_WRF
 $ mkdir DATA
 $ cd DATA
 $ wget ftp://ftpprd.ncep.noaa.gov/pub/data/nccf/com/gfs/prod/gfs.20190801/00/gfs.t00z.pgrb2.0p50.f000
@@ -347,14 +348,14 @@ $ mv gfs.t00z.pgrb2.0p50.f012 GFS_12h
 ##### 运行WPS
 1. 运行geogrid，转到WPS目录中
 ```
-$ cd /shared/WPS/WPS
+$ cd /fsx/WPS/WPS
 $ ./geogrid.exe>＆log.geogrid
 ```
 这一步运行成功的标志是创建了 geo_em.* 文件，在本例中为 geo_em.d01.nc 和 geo_em.d02.nc
 
 2. 运行ungrib，首先修改链接到GFS和Vtables的正确位置
 ```
-$ ./link_grib.csh /shared/Build_WRF/DATA/
+$ ./link_grib.csh /fsx/Build_WRF/DATA/
 $ ln -sf ungrib/Variable_Tables/Vtable.GFS Vtable
 ```
 
@@ -380,8 +381,8 @@ $ ./metgrid.exe>＆log.metgrid
 #### 运行WRF
 1. 进入WRF目录，将 met_em.* 文件复制到工作目录
 ```
-$ cd /shared/WRF/WRF/run
-$ cp /shared/WPS/WPS/met_em* /shared/WRF/WRF/run/
+$ cd /fsx/WRF/WRF/run
+$ cp /fsx/WPS/WPS/met_em* /fsx/WRF/WRF/run/
 ```
 
 2. 修改 namelist.input 文件中的开始和结束时间，每一行三项设置为相同时间，开始和结束时间与实时数据相契合；修改 num_metgrid_levels 参数为34，与实时数据相契合。
@@ -414,8 +415,8 @@ $ vim job.sh
 #PBS -e wrf.err
 echo "Start time: "
 date
-cd /shared/WRF/WRF/run
-/shared/mpich/bin/mpirun /shared/WRF/WRF/run/wrf.exe
+cd /fsx/WRF/WRF/run
+/fsx/mpich/bin/mpirun /fsx/WRF/WRF/run/wrf.exe
 echo "End time: "
 date
 ```
